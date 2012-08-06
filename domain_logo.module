@@ -1,0 +1,76 @@
+<?php
+function domain_logo_form_alter(&$form,&$form_state,$form_id){
+  if($form_id == 'domain_conf_form'){
+    $form['#attributes'] = array('enctype'=>array('multipart/form-data'));
+    
+    $form['Site configuration']['logo_upload'] = array(
+      '#type' => 'file',
+      '#title' => t('Domain logotype'),
+      '#size' => 10,
+      '#description' => t('Alowed formats "png","jpg","gif"')
+    );
+    $logo_fid = domain_conf_variable_get($form['domain_id']['#value'], 'logo_fid');
+    if(!empty($logo_fid)){
+      $logo = file_load($logo_fid);
+      $form['Site configuration']['logo_upload']['#suffix'] = '<div class="logo">'.theme('image_style',array('style_name'=>'thumbnail','path'=>$logo->uri)).'</div>';
+    }
+    $form['#validate'][] = 'domain_logo_validate_logo';
+  }
+}
+function domain_logo_validate_logo(&$form, &$form_state) {
+  // If required, validate the uploaded picture.
+  $validators = array(
+    'file_validate_is_image' => array(),
+//    'file_validate_image_resolution' => array(variable_get('user_picture_dimensions', '85x85')),
+    'file_validate_size' => array(300 * 1024),
+  );
+
+  // Save the file as a temporary file.
+  $file = file_save_upload('logo_upload', $validators);
+  if ($file === FALSE) {
+    form_set_error('logo_upload', t("Failed to upload the logo image"));
+  }
+  elseif ($file !== NULL) {
+    if (!$file->status) {
+      $info = image_get_info($file->uri);
+      $logo_directory =  file_default_scheme() . '://' . 'system';
+
+      // Prepare the pictures directory.
+      $domain = domain_load($form_state['values']['domain_id']);
+      
+      file_prepare_directory($logo_directory, FILE_CREATE_DIRECTORY);
+      $destination = file_stream_wrapper_uri_normalize($logo_directory . '/'.str_replace(' ', '_', $domain['sitename']).'_logo.' . $info['extension']);
+      // Move the temporary file into the final location.
+      if ($file = file_move($file, $destination, FILE_EXISTS_REPLACE)) {
+        $file->status = FILE_STATUS_PERMANENT;
+        $file = file_save($file);        
+      }
+    }
+    $form_state['values']['logo_fid'] = $file->fid;
+    unset($form_state['values']['logo_upload']);
+  }
+}
+//function domain_logo_process_region(&$vars){
+//  if($vars['elements']['#region'] == 'branding'){
+//    $path = domain_logo_get_logo_path();
+//    if(!empty($path)){
+//      $vars['logo'] = $path;
+//    }
+//  }
+//}
+function domain_logo_get_logo_path($domain = null){
+  $path = '';
+  if(empty($domain)){
+    $domain = domain_get_domain();
+  }
+  $logo_fid = domain_conf_variable_get($domain['domain_id'], 'logo_fid');
+  if(!empty($logo_fid)){
+    $logo = file_load($logo_fid);
+    $scheme = file_uri_scheme($logo->uri);
+    if ($scheme && file_stream_wrapper_valid_scheme($scheme)) {
+      $wrapper = file_stream_wrapper_get_instance_by_scheme($scheme);
+      $path = $GLOBALS['base_url'].$GLOBALS['base_path'].$wrapper->getDirectoryPath().'/system/'.drupal_basename($logo->uri);
+    }
+  }
+  return $path;
+}
